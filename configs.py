@@ -4,8 +4,8 @@ import torch
 
 
 parser = argparse.ArgumentParser(description='Hyper parameters to train DQN')
-parser.add_argument('-N', '--memory_size', type=int, default=500000,
-                    help='Size of replay memory(default: 1m)')
+parser.add_argument('-N', '--memory_size', type=int, default=300000,
+                    help='Size of replay memory(default: 300k)')
 parser.add_argument('--random_seed', type=int, default=1234,
                     help='Random state seed(default: 1234)')
 parser.add_argument('--batch_size', type=int, default=32,
@@ -28,14 +28,18 @@ parser.add_argument('--skipping_frames', type=int, default=4,
                     help='Number of skipping frames(default: 4)')
 parser.add_argument('--lr', type=float, default=0.00025,
                     help='Learning rate(default: 0.00025)')
-parser.add_argument('--g_momentum', type=float, default=0.95,
-                    help='Gradient momentum(default: 0.95)')
+parser.add_argument('--alpha', type=float, default=0.95,
+                    help='Alpha for RMSprop(default: 0.95)')
+parser.add_argument('--rmsprop_ep', type=float, default=0.01,
+                    help='Epsilon for RMSprop(default: 0.01)')
 parser.add_argument('--random_start', type=float, default=30,
                     help='Play frames in random action when start(default: 30)')
 parser.add_argument('--eval_freq', type=float, default=250000,
                     help='Evaluation frequency(default: 250000)')
 parser.add_argument('--eval_steps', type=float, default=125000,
                     help='Evaluation steps(default: 125000)')
+parser.add_argument('--update_freq', type=float, default=10000,
+                    help='Update Target DQN frequency(default: 10000)')
 parser.add_argument('--save_freq', type=float, default=125000,
                     help='Save frequency(default: 125000)')
 parser.add_argument('--learn_start', type=float, default=50000,

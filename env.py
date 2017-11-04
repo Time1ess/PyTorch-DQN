@@ -17,14 +17,23 @@ class Env(object):
     def state(self):
         return self.ob, self.reward, self.done, self.info
 
+    @property
+    def lives(self):
+        return self._env.env.ale.lives()
+
     def _step(self, action):
         self.ob, self.reward, self.done, self.info = self._env.step(action)
 
-    def step(self, action):
+    def step(self, action, is_training=True):
         cumsum = 0
+        start_lives = self.lives
+
         for skipped in range(self.skipping_frames):
             self._step(action)
             cumsum += self.reward
+
+            if is_training and start_lives > self.lives:
+                self.done = True
 
             if self.done:
                 break
@@ -45,3 +54,6 @@ class Env(object):
             for i in range(randint(0, self.random_start - 1)):
                 self._step(0)
         return self.ob
+
+    def render(self):
+        self._env.render()

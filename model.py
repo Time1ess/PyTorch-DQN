@@ -12,30 +12,38 @@ class ReplayMemory(object):
     def __init__(self, memory_size):
         self.memory_size = memory_size
         self.idx = 0
-        self.memory = []
+        self.cnt = 0
+        self.histories = np.empty((self.memory_size, 4, 84, 84),
+                                  dtype=np.float32)
+        self.actions = np.empty(self.memory_size, dtype=np.uint8)
+        self.rewards = np.empty(self.memory_size, dtype=np.float32)
+        self.finals = np.empty(self.memory_size, dtype=np.uint8)
 
     def sample(self, batch_size):
         indices = sample(range(1, len(self)), batch_size)
-        batch = []
-        obs = []
-        for idx in indices:
-            obs.append(self.memory[idx-1][2])
-            batch.append(self.memory[idx])
-        acts, rews, next_obs, finals = list(zip(*batch))
-        return obs, acts, rews, next_obs, finals
+        prev_ob_indices = [idx - 1 for idx in indices]
+        histories = self.histories[prev_ob_indices]
+        acts = self.actions[indices]
+        rews = self.rewards[indices]
+        next_histories = self.histories[indices]
+        finals = self.finals[indices]
+        return histories, acts, rews, next_histories, finals
 
     def reset(self):
         self.memory.clear()
         self.idx = 0
 
     def push(self, transition):
-        if len(self.memory) < self.memory_size:
-            self.memory.append(None)
-        self.memory[self.idx] = transition
+        action, reward, history, done = transition
+        self.histories[self.idx, :, :] = history
+        self.actions[self.idx] = action
+        self.rewards[self.idx] = reward
+        self.finals[self.idx] = 1 if done else 0
         self.idx = (self.idx + 1) % self.memory_size
+        self.cnt += 1
 
     def __len__(self):
-        return len(self.memory)
+        return min(self.cnt, self.memory_size)
 
 
 class History(object):
@@ -48,11 +56,10 @@ class History(object):
         self.history[0, :, :] = x
 
     def reset(self):
-        self.history = np.zeros((4, 84, 84)).astype(float)
+        self.history = np.zeros((4, 84, 84), dtype=np.float32)
 
     def get_history(self):
-        return torch.from_numpy(
-            self.history.reshape((1, 4, 84, 84))).type(torch.FloatTensor)
+        return self.history
 
 
 class DQN(nn.Module):
@@ -60,26 +67,17 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.output_size = output_size
 
-        self.conv1 = nn.Conv2d(4, 16, 8, 4)
-        self.conv2 = nn.Conv2d(16, 32, 4, 2)
-        self.fc1 = nn.Linear(2592, 256)
-        self.fc2 = nn.Linear(256, output_size)
-
-        # Init
-        self.conv1.weight.data.normal_(std=0.01)
-        self.conv1.bias.data.zero_().add_(0.1)
-        self.conv2.weight.data.normal_(std=0.01)
-        self.conv2.bias.data.zero_().add_(0.1)
-        self.fc1.weight.data.normal_(std=0.01)
-        self.fc1.bias.data.zero_().add_(0.1)
-        self.fc2.weight.data.normal_(std=0.01)
-        self.fc2.bias.data.zero_().add_(0.1)
+        self.conv1 = nn.Conv2d(4, 32, 8, 4)
+        self.conv2 = nn.Conv2d(32, 64, 4, 2)
+        self.conv3 = nn.Conv2d(64, 64, 3, 1)
+        self.fc1 = nn.Linear(7 * 7 * 64, 512)
+        self.fc2 = nn.Linear(512, output_size)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
-        x = x.view(-1, 2592)
-        x = F.relu(self.fc1(x))
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.fc1(x.view(x.size(0), -1)))
         x = self.fc2(x)
 
         return x
@@ -92,6 +90,9 @@ class DQNAgent(object):
         self.memory = ReplayMemory(args.memory_size)
         self.history = History(args.history_size)
         self.steps = 0
+        self.epsilon = args.epsilon
+        self.total_qvalue = 0
+        self.update_count = 0
 
         self.dqn = DQN(output_size)
         self.target_dqn = DQN(output_size)
@@ -101,7 +102,8 @@ class DQNAgent(object):
             self.target_dqn = self.target_dqn.cuda()
             self.criterion = self.criterion.cuda()
         self.optimizer = optim.RMSprop(self.dqn.parameters(), lr=args.lr,
-                                       momentum=args.g_momentum)
+                                       alpha=args.alpha,
+                                       eps=args.rmsprop_ep)
         self.train()
 
     def train(self, mode=True):
@@ -110,31 +112,35 @@ class DQNAgent(object):
     def q_learn_mini_batch(self):
         args = self.args
         obs, acts, rews, next_obs, finals = self.sample_memory(args.batch_size)
-        observations = torch.cat(obs).type(args.FloatTensor)
-        actions = Variable(args.LongTensor(acts).view(-1, 1))
-        rewards = Variable(args.FloatTensor(rews))
-        next_observations = torch.cat(next_obs).type(args.FloatTensor)
-        game_over_mask = args.ByteTensor(finals)
-        next_rewards = self.qvalue(
-            Variable(next_observations, volatile=True),
-            use_target=True).max(1)[0]
+        observations = Variable(torch.from_numpy(obs).cuda())
+        actions = Variable(torch.from_numpy(acts).view(-1, 1).long().cuda())
+        rewards = Variable(torch.from_numpy(rews).cuda())
+        next_observations = Variable(torch.from_numpy(next_obs).cuda(),
+                                     volatile=True)
+        game_over_mask = torch.from_numpy(finals).cuda()
+        next_rewards = self.qvalue(next_observations,
+                                   use_target=True).max(1)[0]
         next_rewards[game_over_mask] = 0
-        target_rewards = rewards + args.gamma * next_rewards
+        target_rewards = (rewards + args.gamma * next_rewards).view(-1, 1)
         target_rewards.volatile = False
-        prediction_rewards = self.qvalue(
-            Variable(observations)).gather(1, actions)
-        loss = self.criterion(prediction_rewards, target_rewards)
+        prediction_rewards = self.qvalue(observations).gather(1, actions)
+        bellman_errors = (prediction_rewards - target_rewards)
+        clipped_errors = bellman_errors.clamp(-1, 1)
         self.optimizer.zero_grad()
-        loss.backward()
-        for param in self.dqn.parameters():
-            param.grad.data.clamp_(-1, 1)
+        prediction_rewards.backward(clipped_errors.data)
         self.optimizer.step()
+        self.total_qvalue += prediction_rewards.data.cpu().mean()
+        self.update_count += 1
+        if self.update_count % args.update_freq == 0:
+            self.update_target_dqn()
+            self.total_qvalue = 0
+            self.update_count = 0
 
     def perceive(self, observation, action, reward, done):
         self.push_observation(observation)
-        new_history = self.get_history()
+        history = self.get_history()
         if self.train_mode:
-            self.memory.push((action, reward, new_history, done))
+            self.memory.push((action, reward, history, done))
 
         if self.train_mode and self.steps > self.args.learn_start:
             self.q_learn_mini_batch()
@@ -150,17 +156,17 @@ class DQNAgent(object):
         ep = test or max(0.1, self.args.epsilon * (1 - steps / 1e6))
 
         if test is None and steps > self.args.learn_start and random() >= ep:
-            var_his = Variable(history.cuda(), volatile=True)
-            action = self.target_dqn(var_his).max(1)[1].cpu().data[0]
+            history = torch.from_numpy(history).view(1, 4, 84, 84).cuda()
+            var_his = Variable(history, volatile=True)
+            action = self.dqn(var_his).max(1)[1].cpu().data[0]
         else:
             action = self.env.action_space.sample()
         self.steps += 1
+        self.epsilon = ep
         return action
 
     def update_target_dqn(self):
-        for param, target_param in zip(self.dqn.parameters(),
-                                       self.target_dqn.parameters()):
-            target_param.data = param.data.clone()
+        self.target_dqn.load_state_dict(self.dqn.state_dict())
 
     def save(self, episodes):
         torch.save(self.dqn.state_dict(),

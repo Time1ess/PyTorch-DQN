@@ -25,4 +25,4 @@ while True:
         print(action)
         observation, reward, done, info = env.step(action)
         observation = preprocess(observation)
-        # env.render()
+        env.render()
