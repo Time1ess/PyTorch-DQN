@@ -11,7 +11,7 @@ from utils import preprocess
 env = Env(args)
 legal_actions = env.action_space
 agent = DQNAgent(env, legal_actions.n, args)
-agent.target_dqn.load_state_dict(torch.load(args.checkpoint))
+agent.dqn.load_state_dict(torch.load(args.checkpoint))
 agent.train(False)
 
 while True:
@@ -25,4 +25,5 @@ while True:
         print(action)
         observation, reward, done, info = env.step(action)
         observation = preprocess(observation)
+        agent.push_observation(observation)
         env.render()

@@ -4,14 +4,14 @@ import torch
 
 
 parser = argparse.ArgumentParser(description='Hyper parameters to train DQN')
-parser.add_argument('-N', '--memory_size', type=int, default=300000,
-                    help='Size of replay memory(default: 300k)')
+parser.add_argument('-N', '--memory_size', type=int, default=1000000,
+                    help='Size of replay memory(default: 1m')
 parser.add_argument('--random_seed', type=int, default=1234,
                     help='Random state seed(default: 1234)')
 parser.add_argument('--batch_size', type=int, default=32,
                     help='Batch size of replay memory(default: 32)')
 parser.add_argument('--max_episodes', type=int, default=50000000,
-                    help='Max episodes to train DQN(default: 10m)')
+                    help='Max episodes to train DQN(default: 50m)')
 parser.add_argument('--epsilon', type=float, default=1,
                     help='Init epsilon for randomizing actions(default: 1)')
 parser.add_argument('--gamma', type=float, default=0.99,
