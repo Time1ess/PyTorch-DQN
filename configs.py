@@ -47,7 +47,7 @@ parser.add_argument('--learn_start', type=float, default=50000,
                           '(default: 50000)'))
 parser.add_argument('--checkpoint', type=str,
                     help='Model check point path')
-parser.add_argument('--env_name', type=str, default='Breakout-v0',
+parser.add_argument('--env_name', type=str, default='BreakoutDeterministic-v0',
                     help='OpenAI gym name')
 
 args = parser.parse_args()
