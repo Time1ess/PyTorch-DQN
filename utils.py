@@ -1,6 +1,8 @@
-from random import randrange
+import random
 
+import gym
 import numpy as np
+import torch
 from scipy.misc import imresize
 
 
@@ -8,16 +10,26 @@ def preprocess(rgb):
     """
     rgb: height x width x channel(RGB)
     """
-    r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
-    x = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    x = imresize(x, (84, 84)).astype(np.uint8)
+    # 210 x 160 x 3
+    r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    x = 0.299 * r + 0.587 * g + 0.114 * b
+    x = imresize(x, (110, 84)).astype(np.uint8)
+    x = x[18:102]
     return x
 
 
-def random_start(env, max_random_frame):
-    env.reset()
-    frame = randrange(max_random_frame)
-    legal_actions = env.action_space.n
-    for _ in range(frame):
-        env.step(randrange(legal_actions))
-    return env.env._get_obs()
+def set_global_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def get_wrapper_by_name(env, classname):
+    currentenv = env
+    while True:
+        if classname in currentenv.__class__.__name__:
+            return currentenv
+        elif isinstance(env, gym.Wrapper):
+            currentenv = currentenv.env
+        else:
+            raise ValueError("Couldn't find wrapper named %s" % classname)

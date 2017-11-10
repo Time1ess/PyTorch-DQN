@@ -1,2 +1,4 @@
 saves/
-logs/
+*logs/
+.DS_Store
+._.DS_Store
